@@ -43,14 +43,20 @@ class UNet(nn.Module):
         )
 
     def forward(self, x):
+        #print("original shape = " + str(x.size()))
         enc1 = self.encoder1(x)
+        #print("enc1 size = " + str(enc1.size()))
         enc2 = self.encoder2(self.pool1(enc1))
+        #print("enc2 size = " + str(enc2.size()))
         enc3 = self.encoder3(self.pool2(enc2))
+        #print("enc3 size = " + str(enc3.size()))
         enc4 = self.encoder4(self.pool3(enc3))
-
+        #print("enc4 size = " + str(enc4.size()))
         bottleneck = self.bottleneck(self.pool4(enc4))
+        #print("bottleneck size = " + str(bottleneck.size()))
 
         dec4 = self.upconv4(bottleneck)
+        #print("dec4 size = " + str(dec4.size()))
         dec4 = torch.cat((dec4, enc4), dim=1)
         dec4 = self.decoder4(dec4)
         dec3 = self.upconv3(dec4)
@@ -62,7 +68,10 @@ class UNet(nn.Module):
         dec1 = self.upconv1(dec2)
         dec1 = torch.cat((dec1, enc1), dim=1)
         dec1 = self.decoder1(dec1)
-        return torch.sigmoid(self.conv(dec1))
+        #print("dec1 size = " + str(dec1.size()))
+        result = torch.sigmoid(self.conv(dec1))
+        #print("result size = " + str(result.size()))
+        return result
 
     @staticmethod
     def _block(in_channels, features, name):

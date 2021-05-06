@@ -177,7 +177,10 @@ def dsc_per_volume(validation_pred, validation_true):
     for index in range(num_slices):
         y_pred = np.array(validation_pred[index])
         y_true = np.array(validation_true[index])
-        dsc_list.append(dsc(y_pred, y_true))
+        try:
+            dsc_list.append(dsc(y_pred, y_true))
+        except:
+            pass
         #index += num_slices[p]
     return dsc_list
 

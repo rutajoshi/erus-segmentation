@@ -71,8 +71,8 @@ def main(args):
                     y_pred = unet(x)
 
                     loss = dsc_loss(y_pred, y_true)
-                    if (step % 25 == 0):
-                        print("Loss at step " + str(step) + " = " + str(loss))
+                    if (step % 100 == 0 and phase != 'valid'):
+                        print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
 
                     if phase == "valid":
                         loss_valid.append(loss.item())
@@ -109,7 +109,7 @@ def main(args):
                     dsc_per_volume(
                         validation_pred,
                         validation_true,
-                        loader_valid.dataset.patient_slice_index,
+                        #loader_valid.dataset.patient_slice_index,
                     )
                 )
                 logger.scalar_summary("val_dsc", mean_dsc, step)
@@ -170,15 +170,15 @@ def datasets(args):
     return train, valid
 
 
-def dsc_per_volume(validation_pred, validation_true, patient_slice_index):
+def dsc_per_volume(validation_pred, validation_true):
     dsc_list = []
-    num_slices = np.bincount([p[0] for p in patient_slice_index])
+    num_slices = len(validation_pred) #np.bincount([p[0] for p in patient_slice_index])
     index = 0
-    for p in range(len(num_slices)):
-        y_pred = np.array(validation_pred[index : index + num_slices[p]])
-        y_true = np.array(validation_true[index : index + num_slices[p]])
+    for index in range(num_slices):
+        y_pred = np.array(validation_pred[index])
+        y_true = np.array(validation_true[index])
         dsc_list.append(dsc(y_pred, y_true))
-        index += num_slices[p]
+        #index += num_slices[p]
     return dsc_list
 
 

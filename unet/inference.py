@@ -10,7 +10,9 @@ from skimage.io import imsave
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import BrainSegmentationDataset as Dataset
+#from dataset import BrainSegmentationDataset as Dataset
+from torchvision.datasets import MNIST as Dataset
+from torchvision import transforms as tv_transforms
 from unet import UNet
 from utils import dsc, gray2rgb, outline
 
@@ -22,7 +24,7 @@ def main(args):
     loader = data_loader(args)
 
     with torch.set_grad_enabled(False):
-        unet = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels)
+        unet = UNet(in_channels=1, out_channels=1)
         state_dict = torch.load(args.weights, map_location=device)
         unet.load_state_dict(state_dict)
         unet.eval()
@@ -50,8 +52,8 @@ def main(args):
         input_list,
         pred_list,
         true_list,
-        loader.dataset.patient_slice_index,
-        loader.dataset.patients,
+        #loader.dataset.patient_slice_index,
+        #loader.dataset.patients,
     )
 
     dsc_dist = dsc_distribution(volumes)
@@ -73,33 +75,38 @@ def main(args):
 
 
 def data_loader(args):
-    dataset = Dataset(
-        images_dir=args.images,
-        subset="validation",
-        image_size=args.image_size,
-        random_sampling=False,
-    )
+    #dataset = Dataset(
+    #    images_dir=args.images,
+    #    subset="validation",
+    #    image_size=args.image_size,
+    #    random_sampling=False,
+    #)
+
+    transform = tv_transforms.Compose([
+        tv_transforms.ToTensor(),
+        tv_transforms.Normalize((0.1307,), (0.3081,)),
+        tv_transforms.Pad(2)
+        ])
+    #dataset = Dataset('../data', train=True, download=True, transform=transform) # TRAIN
+    dataset = Dataset('../data', train=False, transform=transform) #VALID
+
     loader = DataLoader(
         dataset, batch_size=args.batch_size, drop_last=False, num_workers=1
     )
     return loader
 
 
-def postprocess_per_volume(
-    input_list, pred_list, true_list, patient_slice_index, patients
-):
+def postprocess_per_volume(input_list, pred_list, true_list): #, patient_slice_index, patients):
     volumes = {}
-    num_slices = np.bincount([p[0] for p in patient_slice_index])
-    index = 0
-    for p in range(len(num_slices)):
-        volume_in = np.array(input_list[index : index + num_slices[p]])
+    num_slices = len(pred_list) #np.bincount([p[0] for p in patient_slice_index])
+    for index in range(num_slices):
+        volume_in = np.array(input_list[index])
         volume_pred = np.round(
-            np.array(pred_list[index : index + num_slices[p]])
+            np.array(pred_list[index])
         ).astype(int)
         volume_pred = largest_connected_component(volume_pred)
-        volume_true = np.array(true_list[index : index + num_slices[p]])
-        volumes[patients[p]] = (volume_in, volume_pred, volume_true)
-        index += num_slices[p]
+        volume_true = np.array(true_list[index])
+        volumes.append((volume_in, volume_pred, volume_true))
     return volumes
 
 

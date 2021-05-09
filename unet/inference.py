@@ -66,9 +66,12 @@ def main(args):
         y_pred = volumes[p][1]
         y_true = volumes[p][2]
         for s in range(x.shape[0]):
-            image = gray2rgb(x[s, 1])  # channel 1 is for FLAIR
-            image = outline(image, y_pred[s, 0], color=[255, 0, 0])
-            image = outline(image, y_true[s, 0], color=[0, 255, 0])
+            print(x.shape)
+            image = gray2rgb(x[s])  # channel 1 is for FLAIR
+            image = outline(image, y_pred[s], color=[255, 0, 0])
+            #print(image.shape, y_true.shape)
+            #print(y_true)
+            #image = outline(image, rgb2gray(image), color=[0, 255, 0])
             filename = "{}-{}.png".format(p, str(s).zfill(2))
             filepath = os.path.join(args.predictions, filename)
             imsave(filepath, image)
@@ -104,9 +107,12 @@ def postprocess_per_volume(input_list, pred_list, true_list): #, patient_slice_i
         volume_pred = np.round(
             np.array(pred_list[index])
         ).astype(int)
-        volume_pred = largest_connected_component(volume_pred)
+        try:
+            volume_pred = largest_connected_component(volume_pred)
+        except:
+            continue
         volume_true = np.array(true_list[index])
-        volumes.append((volume_in, volume_pred, volume_true))
+        volumes[str(index)] = (volume_in, volume_pred, volume_true)
     return volumes
 
 
@@ -123,8 +129,8 @@ def plot_dsc(dsc_dist):
     y_positions = np.arange(len(dsc_dist))
     dsc_dist = sorted(dsc_dist.items(), key=lambda x: x[1])
     values = [x[1] for x in dsc_dist]
-    labels = [x[0] for x in dsc_dist]
-    labels = ["_".join(l.split("_")[1:-1]) for l in labels]
+    labels = [str(x[0]) for x in dsc_dist]
+    #labels = ["_".join(l.split("_")[1:-1]) for l in labels]
     fig = plt.figure(figsize=(12, 8))
     canvas = FigureCanvasAgg(fig)
     plt.barh(y_positions, values, align="center", color="skyblue")

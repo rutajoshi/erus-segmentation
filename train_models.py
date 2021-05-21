@@ -1,9 +1,11 @@
-import argparse, sys
+import argparse, sys, os
 import torch
 import torchvision
 from torchvision.datasets import MNIST as Dataset
 import torch.optim as optim
+
 from unet.unet import UNet
+from unet.logger2 import Logger
 
 HAS_CUDA = torch.cuda.is_available()
 device = torch.device('cpu')
@@ -85,7 +87,11 @@ def load_optimizer(params, optimizer_name, learning_rate):
         optimizer = optim.Adam(params, lr=learning_rate)
     return optimizer
 
-def train(model, dataloader, loss_function, optimizer, mnist=False):
+# Utility function from unet/train.py
+def log_loss_summary(logger, loss, step, prefix=""):
+    logger.scalar_summary(prefix + "loss", np.mean(loss), step)
+
+def train(model, dataloader, loss_function, optimizer, mnist=False, logger):
     """
     By default: train forever
     """
@@ -106,12 +112,8 @@ def train(model, dataloader, loss_function, optimizer, mnist=False):
             optimizer.zero_grad()
 
             with torch.set_grad_enabled(True):
-                # With 2 output channels, there should be one black, one white
+                # There should be one output channel for each segmentation group
                 y_pred = model(x)
-
-                # DEBUG
-                # print("y_pred size = " + str(y_pred.shape))
-                # print("y_true size = " + str(y_true.shape))
 
                 loss = loss_function(y_pred, y_true)
 
@@ -121,11 +123,16 @@ def train(model, dataloader, loss_function, optimizer, mnist=False):
                 loss_train.append(loss.item())
                 loss.backward()
                 optimizer.step()
+
+            if (step + 1) % 10 == 0:
+                log_loss_summary(logger, loss_train, step)
+                loss_train = []
+
         epoch += 1
         if (epoch % 10 == 0):
             print("On epoch: " + str(epoch))
 
-def inference(model, dataset):
+def inference(model, dataset, logger):
     return
 
 # Train a model given the model name, dataset, loss function, and other parameters
@@ -140,10 +147,15 @@ def main():
     parser.add_argument('--inference', help='boolean inference', type=bool, default=False)
     parser.add_argument('--batch_size', help='batch size', type=int, default=128)
     parser.add_argument('--device', help='cuda if available', type=str, default='cpu')
+    parser.add_argument('--log_dir', help='directory for logs', type=str, default='./logs')
     args=parser.parse_args()
 
     # Pick device
     device = torch.device("cpu" if not HAS_CUDA else args.device)
+
+    # Initialize logger
+    logger = Logger(args.log_dir)
+    os.makedirs(args.log_dir, exist_ok=True)
 
     # Load dataset
     train_loader, test_loader = load_dataset(args.dataset, args.split, args.batch_size)
@@ -157,15 +169,16 @@ def main():
     # Train or do inference
     if (args.inference):
         if (args.split == "train"):
-            inference(model, train_loader)
+            inference(model, train_loader, logger)
         elif (args.split == "test"):
-            inference(model, test_loader)
+            inference(model, test_loader, logger)
     else:
-        train(model, train_loader, loss, optimizer, mnist=(args.dataset == "mnist"))
+        train(model, train_loader, loss, optimizer, mnist=(args.dataset == "mnist"), logger)
 
 main()
 
 # TODOs
 # Add logging
+# Add validation
 # Save model every 5-10 epochs (or every epoch)
 # Fix training so that it segments mnist properly

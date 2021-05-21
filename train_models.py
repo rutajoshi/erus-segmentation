@@ -1,10 +1,12 @@
 import argparse, sys
 import torch
+import torchvision
 from torchvision.datasets import MNIST as Dataset
 import torch.optim as optim
 from unet.unet import UNet
 
 HAS_CUDA = torch.cuda.is_available()
+device = torch.device('cpu')
 
 CONFIG_CIFAR = { # config for cifar10
     "image_size": 34,
@@ -28,9 +30,11 @@ CONFIG_MNIST = { # config for MNIST
               64, 64, 128, 128, 64, 64, 64],
     "train_data": torchvision.datasets.MNIST('../mnist', train=True, download=True, transform=torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
+        torchvision.transforms.Resize(224), # for unet compatibility
     ])),
     "test_data": torchvision.datasets.MNIST('../mnist', train=False, transform=torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
+        torchvision.transforms.Resize(224), # for unet compatibility
     ]))
 }
 
@@ -60,10 +64,10 @@ def load_dataset(dataset_name, split, batch_size):
 
 def load_model(model_name, dataset_name):
     # Default
-    model = UNet(in_channels=1, out_channels=1)
+    model = UNet(in_channels=1, out_channels=2)
     if (model_name == 'unet'):
         if (dataset_name == 'cifar'):
-            model = UNet(in_channels=3, out_channels=1)
+            model = UNet(in_channels=3, out_channels=2)
     elif (model_name == 'gnn'):
         agg = GCNNAgg((4,4), agg_method='max')
         gnn = BaseGNN(5, None, CONFIG["units"], agg, torch.nn.functional.relu)
@@ -76,10 +80,12 @@ def load_loss(loss_name):
     return loss
 
 def load_optimizer(params, optimizer_name, learning_rate):
-    optimizer = optim.Adam(params, lr=learning_rate)
+    optimizer = optim.SGD(params, lr=learning_rate)
+    if (optimizer_name == "Adam"):
+        optimizer = optim.Adam(params, lr=learning_rate)
     return optimizer
 
-def train(model, dataloader, loss_function, optimizer):
+def train(model, dataloader, loss_function, optimizer, mnist=False):
     """
     By default: train forever
     """
@@ -90,12 +96,23 @@ def train(model, dataloader, loss_function, optimizer):
         print("Starting epoch " + str(epoch))
         for i, data in enumerate(dataloader):
             step += 1
-            x, y_true = data
+            x, y_true = data # x has shape [N, 1, 28, 28] --> y_true [N, 28, 28]
+            if (mnist):
+                # For MNIST, the binary image is the segmentation mask
+                # Remove channel dimension, then binarize from float to long
+                # because long() would round all decimals down to 0
+                y_true = (x[:,0] > 0.5).long()
             x, y_true = x.to(device), y_true.to(device)
             optimizer.zero_grad()
 
             with torch.set_grad_enabled(True):
+                # With 2 output channels, there should be one black, one white
                 y_pred = model(x)
+
+                # DEBUG
+                # print("y_pred size = " + str(y_pred.shape))
+                # print("y_true size = " + str(y_true.shape))
+
                 loss = loss_function(y_pred, y_true)
 
                 if (step % 100 == 0):
@@ -141,10 +158,10 @@ def main():
     if (args.inference):
         if (args.split == "train"):
             inference(model, train_loader)
-        else if (args.split == "test"):
+        elif (args.split == "test"):
             inference(model, test_loader)
     else:
-        train(model, train_loader, loss, optimizer)
+        train(model, train_loader, loss, optimizer, mnist=(args.dataset == "mnist"))
 
 main()
 

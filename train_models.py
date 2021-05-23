@@ -18,11 +18,13 @@ CONFIG_CIFAR = { # config for cifar10
               64, 64, 128, 128, 64, 64, 64, 64, 64],
     "train_data": torchvision.datasets.CIFAR10('../cifar', train=True, download=True, transform=torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Pad(1)
+        torchvision.transforms.Pad(1),
+        torchvision.transforms.Resize(224),
     ])),
     "test_data": torchvision.datasets.CIFAR10('../cifar', train=False, transform=torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Pad(1)
+        torchvision.transforms.Pad(1),
+        torchvision.transforms.Resize(224),
     ]))
 }
 
@@ -41,16 +43,10 @@ CONFIG_MNIST = { # config for MNIST
     ]))
 }
 
-CONFIG = CONFIG_MNIST
-
-def get_cifar_dataloader(batch_size=128):
-    # TODO: make a dataloader for CIFAR
-    return
-
-def get_mnist_dataloader(batch_size=128):
+def get_dataloader(config, batch_size=128):
     # Get train and test data
-    train_data = CONFIG["train_data"]
-    test_data = CONFIG["test_data"]
+    train_data = config["train_data"]
+    test_data = config["test_data"]
 
     # Create dataloaders
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -58,11 +54,12 @@ def get_mnist_dataloader(batch_size=128):
     return train_loader, test_loader
 
 def load_dataset(dataset_name, split, batch_size):
-    train_loader, test_loader = None, None
+    train_loader, test_loader, config = None, None, None
     if (dataset_name == 'mnist'):
-        train_loader, test_loader = get_mnist_dataloader(batch_size)
+        config = CONFIG_MNIST
     elif (dataset_name == 'cifar'):
-        train_loader, test_loader = get_cifar_dataloader(batch_size)
+        config = CONFIG_CIFAR
+    train_loader, test_loader = get_dataloader(config, batch_size)
     dataloaders = {"train": train_loader, "valid": test_loader}
     return dataloaders
 
@@ -93,7 +90,7 @@ def load_optimizer(params, optimizer_name, learning_rate):
 def log_loss_summary(logger, loss, step, prefix=""):
     logger.scalar_summary(prefix + "loss", np.mean(loss), step)
 
-def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, mnist=False, num_epochs=100):
+def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100):
     """
     By default: train forever
     """
@@ -118,12 +115,11 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
                 if phase == "train":
                     step += 1
 
-                x, y_true = data # x has shape [N, 1, 28, 28] --> y_true [N, 28, 28]
-                if (mnist):
-                    # For MNIST, the binary image is the segmentation mask
-                    # Remove channel dimension, then binarize from float to long
-                    # because long() would round all decimals down to 0
-                    y_true = (x[:,0] > 0.5).long()
+                x, y_true = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
+                # For either dataset, the binary image is the segmentation mask
+                # Remove channel dimension, then binarize from float to long
+                # because long() would round all decimals down to 0
+                y_true = (x[:,0] > 0.5).long()
                 x, y_true = x.to(device), y_true.to(device)
                 optimizer.zero_grad()
 
@@ -209,7 +205,7 @@ def main():
         elif (args.split == "test"):
             inference(model, test_loader, logger)
     else:
-        train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, mnist=(args.dataset == "mnist"), num_epochs=100)
+        train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, num_epochs=100)
 
 main()
 

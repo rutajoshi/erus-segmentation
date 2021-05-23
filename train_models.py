@@ -1,4 +1,5 @@
 import argparse, sys, os
+import numpy as np
 import torch
 import torchvision
 from torchvision.datasets import MNIST as Dataset
@@ -62,7 +63,8 @@ def load_dataset(dataset_name, split, batch_size):
         train_loader, test_loader = get_mnist_dataloader(batch_size)
     elif (dataset_name == 'cifar'):
         train_loader, test_loader = get_cifar_dataloader(batch_size)
-    return train_loader, test_loader
+    dataloaders = {"train": train_loader, "valid": test_loader}
+    return dataloaders
 
 def load_model(model_name, dataset_name):
     # Default
@@ -91,42 +93,74 @@ def load_optimizer(params, optimizer_name, learning_rate):
 def log_loss_summary(logger, loss, step, prefix=""):
     logger.scalar_summary(prefix + "loss", np.mean(loss), step)
 
-def train(model, dataloader, loss_function, optimizer, mnist=False, logger):
+def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, mnist=False, num_epochs=100):
     """
     By default: train forever
     """
     epoch = 0
     step = 0
-    loss_train = []
-    while True:
+    loss_train, loss_valid = [], []
+    while epoch < num_epochs:
         print("Starting epoch " + str(epoch))
-        for i, data in enumerate(dataloader):
-            step += 1
-            x, y_true = data # x has shape [N, 1, 28, 28] --> y_true [N, 28, 28]
-            if (mnist):
-                # For MNIST, the binary image is the segmentation mask
-                # Remove channel dimension, then binarize from float to long
-                # because long() would round all decimals down to 0
-                y_true = (x[:,0] > 0.5).long()
-            x, y_true = x.to(device), y_true.to(device)
-            optimizer.zero_grad()
+        for phase in ["train", "valid"]:
+            if phase == "train":
+                model.train()
+            else:
+                model.eval()
 
-            with torch.set_grad_enabled(True):
-                # There should be one output channel for each segmentation group
-                y_pred = model(x)
+            validation_pred = []
+            validation_true = []
 
-                loss = loss_function(y_pred, y_true)
+            # Get correct dataloader for the phase
+            loader = dataloaders[phase]
 
-                if (step % 100 == 0):
-                    print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
+            for i, data in enumerate(loader):
+                if phase == "train":
+                    step += 1
 
-                loss_train.append(loss.item())
-                loss.backward()
-                optimizer.step()
+                x, y_true = data # x has shape [N, 1, 28, 28] --> y_true [N, 28, 28]
+                if (mnist):
+                    # For MNIST, the binary image is the segmentation mask
+                    # Remove channel dimension, then binarize from float to long
+                    # because long() would round all decimals down to 0
+                    y_true = (x[:,0] > 0.5).long()
+                x, y_true = x.to(device), y_true.to(device)
+                optimizer.zero_grad()
 
-            if (step + 1) % 10 == 0:
-                log_loss_summary(logger, loss_train, step)
-                loss_train = []
+                with torch.set_grad_enabled(phase == "train"):
+                    # There should be one output channel for each segmentation group
+                    y_pred = model(x)
+
+                    loss = loss_function(y_pred, y_true)
+
+                    if (step % 100 == 0 and phase != "valid"):
+                        print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
+
+                    if phase == "valid":
+                        loss_valid.append(loss.item())
+                        y_pred_np = y_pred.detach().cpu().numpy()
+                        validation_pred.extend(
+                            [y_pred_np[s] for s in range(y_pred_np.shape[0])]
+                        )
+                        y_true_np = y_true.detach().cpu().numpy()
+                        validation_true.extend(
+                            [y_true_np[s] for s in range(y_true_np.shape[0])]
+                        )
+
+                    if (phase == "train"):
+                        loss_train.append(loss.item())
+                        loss.backward()
+                        optimizer.step()
+
+                if (phase == "train" and (step + 1) % 10 == 0):
+                    log_loss_summary(logger, loss_train, step)
+                    loss_train = []
+
+            if phase == "valid":
+                log_loss_summary(logger, loss_valid, step, prefix="val_")
+                if (epoch % save_freq == 0):
+                    torch.save(model.state_dict(), os.path.join(save_path, "model_"+str(epoch)+".pt"))
+                loss_valid = []
 
         epoch += 1
         if (epoch % 10 == 0):
@@ -148,6 +182,8 @@ def main():
     parser.add_argument('--batch_size', help='batch size', type=int, default=128)
     parser.add_argument('--device', help='cuda if available', type=str, default='cpu')
     parser.add_argument('--log_dir', help='directory for logs', type=str, default='./logs')
+    parser.add_argument('--save_freq', help='how often to save model', type=int, default=10)
+    parser.add_argument('--save_path', help='directory for model saving', type=str, default='./logs')
     args=parser.parse_args()
 
     # Pick device
@@ -158,7 +194,7 @@ def main():
     os.makedirs(args.log_dir, exist_ok=True)
 
     # Load dataset
-    train_loader, test_loader = load_dataset(args.dataset, args.split, args.batch_size)
+    dataloaders = load_dataset(args.dataset, args.split, args.batch_size)
     # Load model
     model = load_model(args.model, args.dataset)
     # Load loss function
@@ -173,7 +209,7 @@ def main():
         elif (args.split == "test"):
             inference(model, test_loader, logger)
     else:
-        train(model, train_loader, loss, optimizer, mnist=(args.dataset == "mnist"), logger)
+        train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, mnist=(args.dataset == "mnist"), num_epochs=100)
 
 main()
 

@@ -130,3 +130,4 @@ dmypy.json
 
 # CS372 gitignore
 data
+logs

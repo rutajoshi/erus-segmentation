@@ -9,7 +9,8 @@ from unet.unet import UNet
 from unet.logger2 import Logger
 
 HAS_CUDA = torch.cuda.is_available()
-device = torch.device('cpu')
+device = torch.device("cpu" if not HAS_CUDA else "cuda")
+
 
 CONFIG_CIFAR = { # config for cifar10
     "image_size": 34,
@@ -162,6 +163,8 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
         if (epoch % 10 == 0):
             print("On epoch: " + str(epoch))
 
+import matplotlib.pyplot as plt
+
 def inference(model, dataloader, loss_function, logger):
     # Go through each image and do inference, storing predictions somewhere
     loss_infer = []
@@ -180,6 +183,10 @@ def inference(model, dataloader, loss_function, logger):
                 logger.log_images(x, y_true, y_pred),
                 i, # step = i
             )
+            #print(y_pred.shape)
+            #plt.imshow((y_pred.detach().cpu().numpy()[0,1] * 256).astype(np.uint8))
+            #plt.show()
+        print(i)
     return loss_infer
 
 # Train a model given the model name, dataset, loss function, and other parameters
@@ -202,7 +209,6 @@ def main():
     args=parser.parse_args()
 
     # Pick device
-    device = torch.device("cpu" if not HAS_CUDA else args.device)
 
     # Initialize logger
     logger = Logger(args.log_dir)
@@ -230,6 +236,7 @@ def main():
             loss_infer = inference(model, dataloaders["valid"], loss, logger)
         print("Inference loss per image = " + str(loss_infer))
     else:
+        model.to(device)
         train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
 
 main()

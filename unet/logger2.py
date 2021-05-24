@@ -54,12 +54,17 @@ class Logger(object):
         # print("x_np shape = " + str(x_np.shape))
         # print("y_true_np shape = " + str(y_true_np.shape))
         # print("y_pred_np shape = " + str(y_pred_np.shape))
+
         for i in range(x_np.shape[0]):
-            image = gray2rgb(np.squeeze(x_np[i]))
-            image = outline(image, y_true_np[i], color=[0, 255, 0])
-            for ch in range(y_pred_np.shape[1]):
-                image = outline(image, y_pred_np[i,ch], color=[255, 0, 0])
-            images.append(image)
+            images.append(
+                y_pred_np[i, 1][...,np.newaxis]
+            )
+        #for i in range(x_np.shape[0]):
+        #    image = gray2rgb(np.squeeze(x_np[i]))
+        #    image = outline(image, y_true_np[i], color=[0, 255, 0])
+        #    for ch in range(y_pred_np.shape[1]):
+        #        image = outline(image, y_pred_np[i,ch], color=[255, 0, 0])
+        #    images.append(image)
         return images
 
     def image_list_summary(self, tag, images, step):

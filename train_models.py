@@ -164,7 +164,6 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
 
 def inference(model, dataloader, loss_function, logger):
     # Go through each image and do inference, storing predictions somewhere
-    model.eval()
     loss_infer = []
     for i, data in enumerate(loader):
         x, y_true = data
@@ -198,6 +197,8 @@ def main():
     parser.add_argument('--log_dir', help='directory for logs', type=str, default='./logs')
     parser.add_argument('--save_freq', help='how often to save model', type=int, default=10)
     parser.add_argument('--save_path', help='directory for model saving', type=str, default='./logs')
+    parser.add_argument('--epochs', help='number of epochs', type=int, default=100)
+    parser.add_argument('--saved_weights', help='path to saved model for inference', type=str, default='./logs/model_100.pt')
     args=parser.parse_args()
 
     # Pick device
@@ -218,12 +219,18 @@ def main():
 
     # Train or do inference
     if (args.inference):
+        state_dict = torch.load(args.saved_weights, map_location=device)
+        model.load_state_dict(state_dict)
+        model.eval()
+        model.to(device)
+        loss_infer = []
         if (args.split == "train"):
-            inference(model, train_loader, loss, logger)
+            loss_infer = inference(model, train_loader, loss, logger)
         elif (args.split == "test"):
-            inference(model, test_loader, loss, logger)
+            loss_infer = inference(model, test_loader, loss, logger)
+        print("Inference loss per image = " + str(loss_infer))
     else:
-        train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, num_epochs=100)
+        train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
 
 main()
 

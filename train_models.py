@@ -162,8 +162,26 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
         if (epoch % 10 == 0):
             print("On epoch: " + str(epoch))
 
-def inference(model, dataset, logger):
-    return
+def inference(model, dataloader, loss_function, logger):
+    # Go through each image and do inference, storing predictions somewhere
+    model.eval()
+    loss_infer = []
+    for i, data in enumerate(loader):
+        x, y_true = data
+        y_true = (x[:,0] > 0.5).long()
+        x, y_true = x.to(device), y_true.to(device)
+        with torch.set_grad_enabled(False):
+            y_pred = model(x)
+            loss = loss_function(y_pred, y_true)
+            loss_infer.append(loss)
+
+            tag = "image/{}".format(i)
+            logger.image_list_summary(
+                tag,
+                logger.log_images(x, y_true, y_pred)[:num_images],
+                i, # step = i
+            )
+    return loss_infer
 
 # Train a model given the model name, dataset, loss function, and other parameters
 def main():
@@ -201,9 +219,9 @@ def main():
     # Train or do inference
     if (args.inference):
         if (args.split == "train"):
-            inference(model, train_loader, logger)
+            inference(model, train_loader, loss, logger)
         elif (args.split == "test"):
-            inference(model, test_loader, logger)
+            inference(model, test_loader, loss, logger)
     else:
         train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, num_epochs=100)
 

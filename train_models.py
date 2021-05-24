@@ -77,8 +77,10 @@ def load_model(model_name, dataset_name):
         model = seg_head
     return model
 
-def load_loss(loss_name):
+def load_loss(loss_name, gamma=2):
     loss = torch.nn.CrossEntropyLoss()
+    if (loss_name == "FL"):
+        loss = FocalLoss()
     return loss
 
 def load_optimizer(params, optimizer_name, learning_rate):
@@ -195,6 +197,7 @@ def main():
     parser.add_argument('--model', help='Model type', type=str, default='unet')
     parser.add_argument('--dataset', help='Dataset name', type=str, default='mnist')
     parser.add_argument('--loss', help='Loss function (CE/FL/DL)', type=str, default='CE')
+    parser.add_argument('--gamma', help='gamma for focal loss', type=int, default=2)
     parser.add_argument('--optimizer', help='SGD/Adam', type=str, default='SGD')
     parser.add_argument('--learning_rate', help='Learning rate', type=int, default=0.01)
     parser.add_argument('--split', help='Train/valid/test', type=str, default='train')
@@ -219,7 +222,7 @@ def main():
     # Load model
     model = load_model(args.model, args.dataset)
     # Load loss function
-    loss = load_loss(args.loss)
+    loss = load_loss(args.loss, args.gamma)
     # Load optimizer
     optimizer = load_optimizer(model.parameters(), args.optimizer, args.learning_rate)
 

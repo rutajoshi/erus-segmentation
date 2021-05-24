@@ -165,7 +165,7 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
 def inference(model, dataloader, loss_function, logger):
     # Go through each image and do inference, storing predictions somewhere
     loss_infer = []
-    for i, data in enumerate(loader):
+    for i, data in enumerate(dataloader):
         x, y_true = data
         y_true = (x[:,0] > 0.5).long()
         x, y_true = x.to(device), y_true.to(device)
@@ -177,7 +177,7 @@ def inference(model, dataloader, loss_function, logger):
             tag = "image/{}".format(i)
             logger.image_list_summary(
                 tag,
-                logger.log_images(x, y_true, y_pred)[:num_images],
+                logger.log_images(x, y_true, y_pred),
                 i, # step = i
             )
     return loss_infer
@@ -225,9 +225,9 @@ def main():
         model.to(device)
         loss_infer = []
         if (args.split == "train"):
-            loss_infer = inference(model, train_loader, loss, logger)
+            loss_infer = inference(model, dataloaders["train"], loss, logger)
         elif (args.split == "test"):
-            loss_infer = inference(model, test_loader, loss, logger)
+            loss_infer = inference(model, dataloaders["valid"], loss, logger)
         print("Inference loss per image = " + str(loss_infer))
     else:
         train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)

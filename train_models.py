@@ -7,6 +7,7 @@ import torch.optim as optim
 
 from unet.unet import UNet
 from unet.logger2 import Logger
+from unet.dataset import BrainSegmentationDataset
 
 HAS_CUDA = torch.cuda.is_available()
 device = torch.device("cpu" if not HAS_CUDA else "cuda")
@@ -42,6 +43,14 @@ CONFIG_MNIST = { # config for MNIST
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Resize(224), # for unet compatibility
     ]))
+}
+
+CONFIG_BRAINMRI = { # config for brain MRI dataset
+    "image_size": 256,
+    "padding": 0,
+    "units": [3, 32, 64, 128, 256, 512, 256, 128, 64, 32, 1],
+    "train_data": BrainSegmentationDataset('../kaggle_3m', train=True, transform=transform),
+    "test_data": BrainSegmentationDataset('../kaggle_3m', train=False, transform=transform)
 }
 
 def get_dataloader(config, batch_size=128):

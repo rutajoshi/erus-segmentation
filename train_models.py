@@ -9,6 +9,8 @@ from unet.unet import UNet
 from unet.logger2 import Logger
 from unet.dataset import BrainSegmentationDataset
 
+from mask_rcnn.mask_rcnn_models import maskrcnn_model
+
 HAS_CUDA = torch.cuda.is_available()
 device = torch.device("cpu" if not HAS_CUDA else "cuda")
 
@@ -84,6 +86,8 @@ def load_model(model_name, dataset_name):
         gnn = BaseGNN(5, None, CONFIG["units"], agg, torch.nn.functional.relu)
         seg_head = GNNSeg(gnn, 10)
         model = seg_head
+    elif (model_name == 'mask_rcnn'):
+        model = maskrcnn_model()
     return model
 
 def load_loss(loss_name, gamma=2):
@@ -281,7 +285,7 @@ def inference(model, dataloader, loss_function, logger):
 # Train a model given the model name, dataset, loss function, and other parameters
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--model', help='Model type', type=str, default='unet')
+    parser.add_argument('--model', help='Model type', type=str, default='mask_rcnn')
     parser.add_argument('--dataset', help='Dataset name', type=str, default='mnist')
     parser.add_argument('--loss', help='Loss function (CE/FL/DL)', type=str, default='CE')
     parser.add_argument('--gamma', help='gamma for focal loss', type=int, default=2)

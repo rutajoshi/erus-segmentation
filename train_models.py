@@ -127,7 +127,7 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
                 if phase == "train":
                     step += 1
 
-                x, y_true = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
+                x, y_classes = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
                 # For either dataset, the binary image is the segmentation mask
                 # Remove channel dimension, then binarize from float to long
                 # because long() would round all decimals down to 0
@@ -173,6 +173,84 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
         epoch += 1
         if (epoch % 10 == 0):
             print("On epoch: " + str(epoch))
+
+
+def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100):
+    """
+    By default: train forever
+    """
+    epoch = 0
+    step = 0
+    loss_train, loss_valid = [], []
+    while epoch < num_epochs:
+        print("Starting epoch " + str(epoch))
+        for phase in ["train", "valid"]:
+            if phase == "train":
+                model.train()
+            else:
+                model.eval()
+
+            validation_pred = []
+            validation_true = []
+
+            # Get correct dataloader for the phase
+            loader = dataloaders[phase]
+
+            for i, data in enumerate(loader):
+                if phase == "train":
+                    step += 1
+
+                x, y_classes = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
+                # For either dataset, the binary image is the segmentation mask
+                # Remove channel dimension, then binarize from float to long
+                # because long() would round all decimals down to 0
+                y_true = (x[:,0] > 0.5).long()
+                x, y_true = x.to(device), y_true.to(device)
+                optimizer.zero_grad()
+
+                with torch.set_grad_enabled(phase == "train"):
+                    # There should be one output channel for each segmentation group
+                    targets = [{
+                        "boxes": torch.Tensor([[0, 0, 28, 28]]),
+                        "masks": y_true[i],
+                        "labels": y_classes[i]
+                    } for i in range(x.shape[0])]
+
+                    loss = model(x, targets)
+
+                    if (step % 100 == 0 and phase != "valid"):
+                        print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
+
+                    if phase == "valid":
+                        loss_valid.append(loss.item())
+                        # y_pred_np = y_pred.detach().cpu().numpy()
+                        # validation_pred.extend(
+                        #     [y_pred_np[s] for s in range(y_pred_np.shape[0])]
+                        # )
+                        # y_true_np = y_true.detach().cpu().numpy()
+                        # validation_true.extend(
+                        #     [y_true_np[s] for s in range(y_true_np.shape[0])]
+                        # )
+
+                    if (phase == "train"):
+                        loss_train.append(loss.item())
+                        loss.backward()
+                        optimizer.step()
+
+                if (phase == "train" and (step + 1) % 10 == 0):
+                    log_loss_summary(logger, loss_train, step)
+                    loss_train = []
+
+            if phase == "valid":
+                log_loss_summary(logger, loss_valid, step, prefix="val_")
+                if (epoch % save_freq == 0):
+                    torch.save(model.state_dict(), os.path.join(save_path, "model_"+str(epoch)+".pt"))
+                loss_valid = []
+
+        epoch += 1
+        if (epoch % 10 == 0):
+            print("On epoch: " + str(epoch))
+
 
 import matplotlib.pyplot as plt
 
@@ -249,7 +327,10 @@ def main():
         print("Inference loss per image = " + str(loss_infer))
     else:
         model.to(device)
-        train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
+        if args.model == "mask_rcnn":
+            train_maskrcnn(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
+        else:
+            train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
 
 main()
 

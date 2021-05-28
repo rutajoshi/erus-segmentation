@@ -11,6 +11,8 @@ from torchvision.models.detection.backbone_utils import (
     _validate_trainable_layers
 )
 
+from .mask_rcnn import MaskRCNN
+
 
 def overwrite_eps(model, eps):
     for module in model.modules():
@@ -23,7 +25,7 @@ model_urls = {
 }
 
 resnet_fpn_backbones = [
-    'ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 
+    'ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
     'resnext50_32x4d', 'resnext101_32x8d', 'wide_resnet50_2', 'wide_resnet101_2',
 ]
 
@@ -32,7 +34,7 @@ mobilenet_backbones = ['MobileNetV2', 'mobilenet_v2', 'MobileNetV3', 'mobilenet_
 
 def maskrcnn_model(backbone_name='resnet50', pretrained=False, progress=True,
                    num_classes=91, pretrained_backbone=True, trainable_backbone_layers=None, **kwargs):
-    
+
     pretrained = pretrained and (backbone_name in model_urls.keys())
 
     trainable_backbone_layers = _validate_trainable_layers(

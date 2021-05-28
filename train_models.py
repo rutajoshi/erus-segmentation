@@ -214,15 +214,18 @@ def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_fr
                 # For either dataset, the binary image is the segmentation mask
                 # Remove channel dimension, then binarize from float to long
                 # because long() would round all decimals down to 0
+                y_true = y_classes
+
                 if not has_mask:
                     y_true = (x > 0.5)
                 x, y_true = x.to(device), y_true[:,0].to(device).long()
+                y_classes = y_classes.to(device).long()
                 optimizer.zero_grad()
 
                 with torch.set_grad_enabled(phase == "train"):
                     # There should be one output channel for each segmentation group
                     targets = [{
-                        "boxes": torch.Tensor([[0, 0, 28, 28]]),
+                        "boxes": torch.Tensor([[0, 0, 28, 28]]).to(device),
                         "masks": y_true[i],
                         "labels": y_classes[i]
                     } for i in range(x.shape[0])]

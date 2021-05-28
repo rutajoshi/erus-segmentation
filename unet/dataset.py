@@ -6,7 +6,27 @@ import torch
 from skimage.io import imread
 from torch.utils.data import Dataset
 
-from utils import crop_sample, pad_sample, resize_sample, normalize_volume
+from .utils import crop_sample, pad_sample, resize_sample, normalize_volume
+from torchvision import datasets, transforms
+
+class M2NISTDataset(Dataset):
+    """M2NIST dataset from kaggle, reformatted to fit model specifications"""
+    in_channels = 1
+    out_channels = 1
+
+    def __init__(self, split):
+        transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,)),
+        transforms.Pad(2)
+        ])
+
+        images = np.load("../data/M2NIST/combined.npy")
+        labels = np.load("../data/M2NIST/segmented.npy")
+
+        #train_data = datasets.MNIST('../data', train=True, download=True, transform=transform)
+        #val_data = datasets.MNIST('../data', train=False, transform=transform)
+
 
 
 class BrainSegmentationDataset(Dataset):

@@ -8,6 +8,8 @@ class DiceLoss(nn.Module):
         self.smooth = 1.0
 
     def forward(self, y_pred, y_true):
+        #print("y_pred size = " + str(y_pred.size()))
+        #print("y_true size = " + str(y_true.size()))
         assert y_pred.size() == y_true.size()
         y_pred = y_pred[:, 0].contiguous().view(-1)
         y_true = y_true[:, 0].contiguous().view(-1)

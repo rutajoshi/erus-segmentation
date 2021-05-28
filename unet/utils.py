@@ -84,7 +84,7 @@ def normalize_volume(volume):
     return volume
 
 
-def log_images(x, y_true, y_pred, channel=1):
+def log_images(x, y_true, y_pred, channel=0):
     images = []
     x_np = x[:, channel].cpu().numpy()
     y_true_np = y_true[:, 0].cpu().numpy()

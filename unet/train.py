@@ -8,8 +8,11 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import BrainSegmentationDataset as Dataset
-from logger import Logger
+#from dataset import BrainSegmentationDataset as Dataset
+from torchvision.datasets import MNIST as Dataset
+from torchvision import transforms as tv_transforms
+#from logger import Logger
+from logger2 import Logger # Improved for tf2
 from loss import DiceLoss
 from transform import transforms
 from unet import UNet
@@ -24,7 +27,8 @@ def main(args):
     loader_train, loader_valid = data_loaders(args)
     loaders = {"train": loader_train, "valid": loader_valid}
 
-    unet = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels)
+    #unet = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels)
+    unet = UNet(in_channels=1, out_channels=1)
     unet.to(device)
 
     dsc_loss = DiceLoss()
@@ -38,7 +42,10 @@ def main(args):
 
     step = 0
 
+    print("Total epochs = " + str(args.epochs))
+
     for epoch in tqdm(range(args.epochs), total=args.epochs):
+        print("Starting epoch " + str(epoch))
         for phase in ["train", "valid"]:
             if phase == "train":
                 unet.train()
@@ -48,11 +55,14 @@ def main(args):
             validation_pred = []
             validation_true = []
 
+            stuff = loaders[phase]
+            print("Num steps for epoch = " + str(len(stuff)))
             for i, data in enumerate(loaders[phase]):
                 if phase == "train":
                     step += 1
 
                 x, y_true = data
+                y_true = x # For MNIST, the binary image is the segmentation mask
                 x, y_true = x.to(device), y_true.to(device)
 
                 optimizer.zero_grad()
@@ -61,6 +71,8 @@ def main(args):
                     y_pred = unet(x)
 
                     loss = dsc_loss(y_pred, y_true)
+                    if (step % 100 == 0 and phase != 'valid'):
+                        print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
 
                     if phase == "valid":
                         loss_valid.append(loss.item())
@@ -97,7 +109,7 @@ def main(args):
                     dsc_per_volume(
                         validation_pred,
                         validation_true,
-                        loader_valid.dataset.patient_slice_index,
+                        #loader_valid.dataset.patient_slice_index,
                     )
                 )
                 logger.scalar_summary("val_dsc", mean_dsc, step)
@@ -135,30 +147,41 @@ def data_loaders(args):
 
 
 def datasets(args):
-    train = Dataset(
-        images_dir=args.images,
-        subset="train",
-        image_size=args.image_size,
-        transform=transforms(scale=args.aug_scale, angle=args.aug_angle, flip_prob=0.5),
-    )
-    valid = Dataset(
-        images_dir=args.images,
-        subset="validation",
-        image_size=args.image_size,
-        random_sampling=False,
-    )
+    transform = tv_transforms.Compose([
+        tv_transforms.ToTensor(),
+        tv_transforms.Normalize((0.1307,), (0.3081,)),
+        tv_transforms.Pad(2)
+        ])
+    train = Dataset('../data', train=True, download=True, transform=transform)
+    valid = Dataset('../data', train=False, transform=transform)
+
+    #train = Dataset(
+    #    images_dir=args.images,
+    #    subset="train",
+    #    image_size=args.image_size,
+    #    transform=transforms(scale=args.aug_scale, angle=args.aug_angle, flip_prob=0.5),
+    #)
+    #valid = Dataset(
+    #    images_dir=args.images,
+    #    subset="validation",
+    #    image_size=args.image_size,
+    #    random_sampling=False,
+    #)
     return train, valid
 
 
-def dsc_per_volume(validation_pred, validation_true, patient_slice_index):
+def dsc_per_volume(validation_pred, validation_true):
     dsc_list = []
-    num_slices = np.bincount([p[0] for p in patient_slice_index])
+    num_slices = len(validation_pred) #np.bincount([p[0] for p in patient_slice_index])
     index = 0
-    for p in range(len(num_slices)):
-        y_pred = np.array(validation_pred[index : index + num_slices[p]])
-        y_true = np.array(validation_true[index : index + num_slices[p]])
-        dsc_list.append(dsc(y_pred, y_true))
-        index += num_slices[p]
+    for index in range(num_slices):
+        y_pred = np.array(validation_pred[index])
+        y_true = np.array(validation_true[index])
+        try:
+            dsc_list.append(dsc(y_pred, y_true))
+        except:
+            pass
+        #index += num_slices[p]
     return dsc_list
 
 

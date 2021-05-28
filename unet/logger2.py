@@ -57,7 +57,10 @@ class Logger(object):
 
         for i in range(x_np.shape[0]):
             images.append(
-                y_pred_np[i, 1][...,np.newaxis]
+                np.concatenate([
+                    y_pred_np[i, 1][...,np.newaxis],
+                    y_true_np[i][...,np.newaxis]
+                ], 0)
             )
         #for i in range(x_np.shape[0]):
         #    image = gray2rgb(np.squeeze(x_np[i]))

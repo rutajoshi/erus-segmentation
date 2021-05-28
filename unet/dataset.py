@@ -6,7 +6,7 @@ import torch
 from skimage.io import imread
 from torch.utils.data import Dataset
 
-from utils import crop_sample, pad_sample, resize_sample, normalize_volume
+from .utils import crop_sample, pad_sample, resize_sample, normalize_volume
 from torchvision import datasets, transforms
 
 class M2NISTDataset(Dataset):
@@ -21,7 +21,7 @@ class M2NISTDataset(Dataset):
         transforms.Pad(2)
         ])
 
-        images = np.load("../data/M2NIST/combined.npy)
+        images = np.load("../data/M2NIST/combined.npy")
         labels = np.load("../data/M2NIST/segmented.npy")
 
         #train_data = datasets.MNIST('../data', train=True, download=True, transform=transform)

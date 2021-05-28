@@ -12,7 +12,7 @@ from unet.dataset import BrainSegmentationDataset
 from mask_rcnn.mask_rcnn_models import maskrcnn_model
 
 HAS_CUDA = torch.cuda.is_available()
-device = torch.device("cpu" if not HAS_CUDA else "cuda")
+device = torch.device("cpu" if not HAS_CUDA else "cuda:0")
 
 
 CONFIG_CIFAR = { # config for cifar10
@@ -51,8 +51,8 @@ CONFIG_BRAINMRI = { # config for brain MRI dataset
     "image_size": 256,
     "padding": 0,
     "units": [3, 32, 64, 128, 256, 512, 256, 128, 64, 32, 1],
-    "train_data": BrainSegmentationDataset('../kaggle_3m', train=True, transform=transform),
-    "test_data": BrainSegmentationDataset('../kaggle_3m', train=False, transform=transform)
+    "train_data": BrainSegmentationDataset('data/brain-mri', subset='train', transform=None),
+    "test_data": BrainSegmentationDataset('data/brain-mri', subset='validation', transform=None)
 }
 
 def get_dataloader(config, batch_size=128):
@@ -71,15 +71,18 @@ def load_dataset(dataset_name, split, batch_size):
         config = CONFIG_MNIST
     elif (dataset_name == 'cifar'):
         config = CONFIG_CIFAR
+    elif (dataset_name == 'brain'):
+        config = CONFIG_BRAINMRI
     train_loader, test_loader = get_dataloader(config, batch_size)
     dataloaders = {"train": train_loader, "valid": test_loader}
     return dataloaders
 
 def load_model(model_name, dataset_name):
     # Default
-    model = UNet(in_channels=1, out_channels=2)
     if (model_name == 'unet'):
-        if (dataset_name == 'cifar'):
+        if (dataset_name.lower() in ['mnist']):
+            model = UNet(in_channels=1, out_channels=2)
+        if (dataset_name in ['cifar', 'brain']):
             model = UNet(in_channels=3, out_channels=2)
     elif (model_name == 'gnn'):
         agg = GCNNAgg((4,4), agg_method='max')
@@ -106,7 +109,8 @@ def load_optimizer(params, optimizer_name, learning_rate):
 def log_loss_summary(logger, loss, step, prefix=""):
     logger.scalar_summary(prefix + "loss", np.mean(loss), step)
 
-def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100):
+def train(model, dataloaders, loss_function, optimizer,
+          logger, save_freq, save_path, num_epochs=100, has_mask=True):
     """
     By default: train forever
     """
@@ -135,8 +139,9 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
                 # For either dataset, the binary image is the segmentation mask
                 # Remove channel dimension, then binarize from float to long
                 # because long() would round all decimals down to 0
-                y_true = (x[:,0] > 0.5).long()
-                x, y_true = x.to(device), y_true.to(device)
+                if not has_mask:
+                    y_true = (x > 0.5).long()
+                x, y_true = x.to(device), y_true.to(device).long()[:,0]
                 optimizer.zero_grad()
 
                 with torch.set_grad_enabled(phase == "train"):
@@ -163,6 +168,7 @@ def train(model, dataloaders, loss_function, optimizer, logger, save_freq, save_
                         loss_train.append(loss.item())
                         loss.backward()
                         optimizer.step()
+
 
                 if (phase == "train" and (step + 1) % 10 == 0):
                     log_loss_summary(logger, loss_train, step)
@@ -258,13 +264,14 @@ def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_fr
 
 import matplotlib.pyplot as plt
 
-def inference(model, dataloader, loss_function, logger):
+def inference(model, dataloader, loss_function, logger, has_mask=True):
     # Go through each image and do inference, storing predictions somewhere
     loss_infer = []
     for i, data in enumerate(dataloader):
         x, y_true = data
-        y_true = (x[:,0] > 0.5).long()
-        x, y_true = x.to(device), y_true.to(device)
+        if not has_mask:
+            y_true = (x > 0.5).long()
+        x, y_true = x.to(device), y_true.to(device)[:,0].long()
         with torch.set_grad_enabled(False):
             y_pred = model(x)
             loss = loss_function(y_pred, y_true)
@@ -310,8 +317,10 @@ def main():
 
     # Load dataset
     dataloaders = load_dataset(args.dataset, args.split, args.batch_size)
+    has_mask = (args.dataset not in ['mnist'])
     # Load model
     model = load_model(args.model, args.dataset)
+
     # Load loss function
     loss = load_loss(args.loss, args.gamma)
     # Load optimizer
@@ -325,16 +334,16 @@ def main():
         model.to(device)
         loss_infer = []
         if (args.split == "train"):
-            loss_infer = inference(model, dataloaders["train"], loss, logger)
+            loss_infer = inference(model, dataloaders["train"], loss, logger, has_mask)
         elif (args.split == "test"):
-            loss_infer = inference(model, dataloaders["valid"], loss, logger)
+            loss_infer = inference(model, dataloaders["valid"], loss, logger, has_mask)
         print("Inference loss per image = " + str(loss_infer))
     else:
         model.to(device)
         if args.model == "mask_rcnn":
-            train_maskrcnn(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
+            train_maskrcnn(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
         else:
-            train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs)
+            train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
 
 main()
 

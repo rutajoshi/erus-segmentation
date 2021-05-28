@@ -185,7 +185,7 @@ def train(model, dataloaders, loss_function, optimizer,
             print("On epoch: " + str(epoch))
 
 
-def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100):
+def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100, has_mask=True):
     """
     By default: train forever
     """
@@ -214,8 +214,9 @@ def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_fr
                 # For either dataset, the binary image is the segmentation mask
                 # Remove channel dimension, then binarize from float to long
                 # because long() would round all decimals down to 0
-                y_true = (x[:,0] > 0.5).long()
-                x, y_true = x.to(device), y_true.to(device)
+                if not has_mask:
+                    y_true = (x > 0.5)
+                x, y_true = x.to(device), y_true[:,0].to(device).long()
                 optimizer.zero_grad()
 
                 with torch.set_grad_enabled(phase == "train"):

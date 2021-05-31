@@ -9,6 +9,8 @@ from unet.unet import UNet
 from unet.logger2 import Logger
 from unet.dataset import BrainSegmentationDataset
 
+from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+
 from mask_rcnn.mask_rcnn_models import maskrcnn_model
 
 HAS_CUDA = torch.cuda.is_available()
@@ -91,6 +93,16 @@ def load_model(model_name, dataset_name):
         model = seg_head
     elif (model_name == 'mask_rcnn'):
         model = maskrcnn_model()
+
+        in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
+        hidden_layer = 256
+
+        num_classes = 10
+        if dataset_name in ['mnist', 'cifar']:
+            num_classes = 10
+        elif dataset_name == 'brain':
+            num_classes = 2
+        model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
     return model
 
 def load_loss(loss_name, gamma=2):
@@ -225,10 +237,11 @@ def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_fr
                 with torch.set_grad_enabled(phase == "train"):
                     # There should be one output channel for each segmentation group
                     targets = [{
-                        "boxes": torch.Tensor([[0, 0, 28, 28]]).to(device),
-                        "masks": y_true[i],
-                        "labels": y_classes[i]
-                    } for i in range(x.shape[0])]
+                        "boxes": torch.Tensor([[0, 0, 27, 27]]).to(device),
+                        "masks": torch.unsqueeze(y_true[i], 0).to(device),
+                        "labels": torch.Tensor([y_classes[i]]).to(dtype=torch.int64)
+                    }]
+                    targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
                     loss = model(x, targets)
 

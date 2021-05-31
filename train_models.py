@@ -197,7 +197,7 @@ def train(model, dataloaders, loss_function, optimizer,
             print("On epoch: " + str(epoch))
 
 
-def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100, has_mask=True):
+def train_maskrcnn(model, dataset, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100, has_mask=True):
     """
     By default: train forever
     """
@@ -230,14 +230,27 @@ def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_fr
 
                 if not has_mask:
                     y_true = (x > 0.5)
+
                 x, y_true = x.to(device), y_true[:,0].to(device).long()
+
+                if dataset == 'brain':
+                    y_classes = torch.Tensor([torch.any((y_true[j] != 0)) for j in range(y_true.shape[0])])
+
                 y_classes = y_classes.to(device).long()
                 optimizer.zero_grad()
+
+                img_size = [27, 27]
+                if dataset == 'mnist':
+                    img_size = [27, 27]
+                elif dataset == 'cifar':
+                    img_size = [31, 31]
+                elif dataset == 'brain':
+                    img_size = [223, 223]
 
                 with torch.set_grad_enabled(phase == "train"):
                     # There should be one output channel for each segmentation group
                     targets = [{
-                        "boxes": torch.Tensor([[0, 0, 27, 27]]).to(device),
+                        "boxes": torch.Tensor([[0, 0, *img_size]]).to(device),
                         "masks": torch.unsqueeze(y_true[j], 0).to(device), #y_true[j],
                         "labels": torch.Tensor([y_classes[j]]).to(dtype=torch.int64).to(device), #y_classes[j]
                     } for j in range(x.shape[0])]
@@ -362,7 +375,7 @@ def main():
     else:
         model.to(device)
         if args.model == "mask_rcnn":
-            train_maskrcnn(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
+            train_maskrcnn(model, args.dataset, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
         else:
             train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
 

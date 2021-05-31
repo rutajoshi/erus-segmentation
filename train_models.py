@@ -238,28 +238,32 @@ def train_maskrcnn(model, dataloaders, loss_function, optimizer, logger, save_fr
                     # There should be one output channel for each segmentation group
                     targets = [{
                         "boxes": torch.Tensor([[0, 0, 27, 27]]).to(device),
-                        "masks": torch.unsqueeze(y_true[i], 0).to(device),
-                        "labels": torch.Tensor([y_classes[i]]).to(dtype=torch.int64)
-                    }]
+                        "masks": torch.unsqueeze(y_true[j], 0).to(device), #y_true[j],
+                        "labels": torch.Tensor([y_classes[j]]).to(dtype=torch.int64).to(device), #y_classes[j]
+                    } for j in range(x.shape[0])]
+                    #targets = [{
+                    #    "boxes": torch.Tensor([[0, 0, 27, 27]]).to(device),
+                    #    "masks": torch.unsqueeze(y_true[i], 0).to(device),
+                    #    "labels": torch.Tensor([y_classes[i]]).to(dtype=torch.int64)
+                    #}]
                     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-                    loss = model(x, targets)
+                    loss_dict = model(x, targets)
+
+                    loss = 0.0
+                    for k in loss_dict:
+                        if k == 'loss_classifier':
+                            continue
+                        loss = loss + loss_dict[k]
 
                     if (step % 100 == 0 and phase != "valid"):
                         print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
 
                     if phase == "valid":
                         loss_valid.append(loss.item())
-                        # y_pred_np = y_pred.detach().cpu().numpy()
-                        # validation_pred.extend(
-                        #     [y_pred_np[s] for s in range(y_pred_np.shape[0])]
-                        # )
-                        # y_true_np = y_true.detach().cpu().numpy()
-                        # validation_true.extend(
-                        #     [y_true_np[s] for s in range(y_true_np.shape[0])]
-                        # )
 
                     if (phase == "train"):
+                        #print(loss)
                         loss_train.append(loss.item())
                         loss.backward()
                         optimizer.step()

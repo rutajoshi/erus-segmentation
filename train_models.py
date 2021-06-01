@@ -262,18 +262,19 @@ def train_maskrcnn(model, dataset, dataloaders, loss_function, optimizer, logger
                     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
                     loss_dict = model(x, targets)
-
+                    #print(loss_dict)
                     loss = 0.0
-                    for k in loss_dict:
-                        if k == 'loss_classifier':
-                            continue
-                        loss = loss + loss_dict[k]
+                    if phase == 'train':
+                        for k in loss_dict:
+                            #if k == 'loss_classifier':
+                            #    continue
+                            loss = loss + loss_dict[k]
 
                     if (step % 100 == 0 and phase != "valid"):
                         print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
 
                     if phase == "valid":
-                        loss_valid.append(loss.item())
+                        loss_valid.append(0.0)
 
                     if (phase == "train"):
                         #print(loss)
@@ -298,7 +299,7 @@ def train_maskrcnn(model, dataset, dataloaders, loss_function, optimizer, logger
 
 import matplotlib.pyplot as plt
 
-def inference(model, dataloader, loss_function, logger, has_mask=True):
+def inference(model, dataloader, loss_function, logger, has_mask=True, run_loss=True):
     # Go through each image and do inference, storing predictions somewhere
     loss_infer = []
     for i, data in enumerate(dataloader):
@@ -308,7 +309,13 @@ def inference(model, dataloader, loss_function, logger, has_mask=True):
         x, y_true = x.to(device), y_true.to(device)[:,0].long()
         with torch.set_grad_enabled(False):
             y_pred = model(x)
-            loss = loss_function(y_pred, y_true)
+            #print(y_pred[0]['masks'].shape)
+            if run_loss:
+                loss = loss_function(y_pred, y_true)
+            else:
+                y_pred = torch.cat([y_pred[j]['masks'] for j in range(len(y_pred))], 0)
+                y_pred = torch.cat([y_pred, y_pred], 1)
+                loss = 0.0
             loss_infer.append(loss)
 
             tag = "image/{}".format(i)
@@ -352,8 +359,10 @@ def main():
     # Load dataset
     dataloaders = load_dataset(args.dataset, args.split, args.batch_size)
     has_mask = (args.dataset not in ['mnist'])
+
     # Load model
     model = load_model(args.model, args.dataset)
+    run_loss = args.model not in ['mask_rcnn']
 
     # Load loss function
     loss = load_loss(args.loss, args.gamma)
@@ -368,9 +377,9 @@ def main():
         model.to(device)
         loss_infer = []
         if (args.split == "train"):
-            loss_infer = inference(model, dataloaders["train"], loss, logger, has_mask)
+            loss_infer = inference(model, dataloaders["train"], loss, logger, has_mask, run_loss)
         elif (args.split == "test"):
-            loss_infer = inference(model, dataloaders["valid"], loss, logger, has_mask)
+            loss_infer = inference(model, dataloaders["valid"], loss, logger, has_mask, run_loss)
         print("Inference loss per image = " + str(loss_infer))
     else:
         model.to(device)

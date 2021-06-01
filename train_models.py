@@ -9,6 +9,10 @@ from unet.unet import UNet
 from unet.logger2 import Logger
 from unet.dataset import BrainSegmentationDataset
 
+from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+
+from mask_rcnn.mask_rcnn_models import maskrcnn_model
+
 HAS_CUDA = torch.cuda.is_available()
 device = torch.device("cpu" if not HAS_CUDA else "cuda:0")
 
@@ -87,6 +91,18 @@ def load_model(model_name, dataset_name):
         gnn = BaseGNN(5, None, CONFIG["units"], agg, torch.nn.functional.relu)
         seg_head = GNNSeg(gnn, 10)
         model = seg_head
+    elif (model_name == 'mask_rcnn'):
+        model = maskrcnn_model()
+
+        in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
+        hidden_layer = 256
+
+        num_classes = 10
+        if dataset_name in ['mnist', 'cifar']:
+            num_classes = 10
+        elif dataset_name == 'brain':
+            num_classes = 2
+        model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
     return model
 
 def load_loss(loss_name, gamma=2):
@@ -131,7 +147,7 @@ def train(model, dataloaders, loss_function, optimizer,
                 if phase == "train":
                     step += 1
 
-                x, y_true = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
+                x, y_classes = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
                 # For either dataset, the binary image is the segmentation mask
                 # Remove channel dimension, then binarize from float to long
                 # because long() would round all decimals down to 0
@@ -180,9 +196,110 @@ def train(model, dataloaders, loss_function, optimizer,
         if (epoch % 10 == 0):
             print("On epoch: " + str(epoch))
 
+
+def train_maskrcnn(model, dataset, dataloaders, loss_function, optimizer, logger, save_freq, save_path, num_epochs=100, has_mask=True):
+    """
+    By default: train forever
+    """
+    epoch = 0
+    step = 0
+    loss_train, loss_valid = [], []
+    while epoch < num_epochs:
+        print("Starting epoch " + str(epoch))
+        for phase in ["train", "valid"]:
+            if phase == "train":
+                model.train()
+            else:
+                model.eval()
+
+            validation_pred = []
+            validation_true = []
+
+            # Get correct dataloader for the phase
+            loader = dataloaders[phase]
+
+            for i, data in enumerate(loader):
+                if phase == "train":
+                    step += 1
+
+                x, y_classes = data # x has shape [N, 1, 224, 224] --> y_true [N, 224, 224]
+                # For either dataset, the binary image is the segmentation mask
+                # Remove channel dimension, then binarize from float to long
+                # because long() would round all decimals down to 0
+                y_true = y_classes
+
+                if not has_mask:
+                    y_true = (x > 0.5)
+
+                x, y_true = x.to(device), y_true[:,0].to(device).long()
+
+                if dataset == 'brain':
+                    y_classes = torch.Tensor([torch.any((y_true[j] != 0)) for j in range(y_true.shape[0])])
+
+                y_classes = y_classes.to(device).long()
+                optimizer.zero_grad()
+
+                img_size = [27, 27]
+                if dataset == 'mnist':
+                    img_size = [27, 27]
+                elif dataset == 'cifar':
+                    img_size = [31, 31]
+                elif dataset == 'brain':
+                    img_size = [223, 223]
+
+                with torch.set_grad_enabled(phase == "train"):
+                    # There should be one output channel for each segmentation group
+                    targets = [{
+                        "boxes": torch.Tensor([[0, 0, *img_size]]).to(device),
+                        "masks": torch.unsqueeze(y_true[j], 0).to(device), #y_true[j],
+                        "labels": torch.Tensor([y_classes[j]]).to(dtype=torch.int64).to(device), #y_classes[j]
+                    } for j in range(x.shape[0])]
+                    #targets = [{
+                    #    "boxes": torch.Tensor([[0, 0, 27, 27]]).to(device),
+                    #    "masks": torch.unsqueeze(y_true[i], 0).to(device),
+                    #    "labels": torch.Tensor([y_classes[i]]).to(dtype=torch.int64)
+                    #}]
+                    targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+                    loss_dict = model(x, targets)
+                    #print(loss_dict)
+                    loss = 0.0
+                    if phase == 'train':
+                        for k in loss_dict:
+                            #if k == 'loss_classifier':
+                            #    continue
+                            loss = loss + loss_dict[k]
+
+                    if (step % 100 == 0 and phase != "valid"):
+                        print("Loss at step " + str(step) + " = " + str(loss.detach().cpu().numpy()))
+
+                    if phase == "valid":
+                        loss_valid.append(0.0)
+
+                    if (phase == "train"):
+                        #print(loss)
+                        loss_train.append(loss.item())
+                        loss.backward()
+                        optimizer.step()
+
+                if (phase == "train" and (step + 1) % 10 == 0):
+                    log_loss_summary(logger, loss_train, step)
+                    loss_train = []
+
+            if phase == "valid":
+                log_loss_summary(logger, loss_valid, step, prefix="val_")
+                if (epoch % save_freq == 0):
+                    torch.save(model.state_dict(), os.path.join(save_path, "model_"+str(epoch)+".pt"))
+                loss_valid = []
+
+        epoch += 1
+        if (epoch % 10 == 0):
+            print("On epoch: " + str(epoch))
+
+
 import matplotlib.pyplot as plt
 
-def inference(model, dataloader, loss_function, logger, has_mask=True):
+def inference(model, dataloader, loss_function, logger, has_mask=True, run_loss=True):
     # Go through each image and do inference, storing predictions somewhere
     loss_infer = []
     for i, data in enumerate(dataloader):
@@ -192,7 +309,13 @@ def inference(model, dataloader, loss_function, logger, has_mask=True):
         x, y_true = x.to(device), y_true.to(device)[:,0].long()
         with torch.set_grad_enabled(False):
             y_pred = model(x)
-            loss = loss_function(y_pred, y_true)
+            #print(y_pred[0]['masks'].shape)
+            if run_loss:
+                loss = loss_function(y_pred, y_true)
+            else:
+                y_pred = torch.cat([y_pred[j]['masks'] for j in range(len(y_pred))], 0)
+                y_pred = torch.cat([y_pred, y_pred], 1)
+                loss = 0.0
             loss_infer.append(loss)
 
             tag = "image/{}".format(i)
@@ -210,7 +333,7 @@ def inference(model, dataloader, loss_function, logger, has_mask=True):
 # Train a model given the model name, dataset, loss function, and other parameters
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--model', help='Model type', type=str, default='unet')
+    parser.add_argument('--model', help='Model type', type=str, default='mask_rcnn')
     parser.add_argument('--dataset', help='Dataset name', type=str, default='mnist')
     parser.add_argument('--loss', help='Loss function (CE/FL/DL)', type=str, default='CE')
     parser.add_argument('--gamma', help='gamma for focal loss', type=int, default=2)
@@ -236,8 +359,10 @@ def main():
     # Load dataset
     dataloaders = load_dataset(args.dataset, args.split, args.batch_size)
     has_mask = (args.dataset not in ['mnist'])
+
     # Load model
     model = load_model(args.model, args.dataset)
+    run_loss = args.model not in ['mask_rcnn']
 
     # Load loss function
     loss = load_loss(args.loss, args.gamma)
@@ -252,14 +377,16 @@ def main():
         model.to(device)
         loss_infer = []
         if (args.split == "train"):
-            loss_infer = inference(model, dataloaders["train"], loss, logger, has_mask)
+            loss_infer = inference(model, dataloaders["train"], loss, logger, has_mask, run_loss)
         elif (args.split == "test"):
-            loss_infer = inference(model, dataloaders["valid"], loss, logger, has_mask)
+            loss_infer = inference(model, dataloaders["valid"], loss, logger, has_mask, run_loss)
         print("Inference loss per image = " + str(loss_infer))
     else:
         model.to(device)
-        train(model, dataloaders, loss, optimizer, logger, args.save_freq,
-              args.save_path, args.epochs, has_mask)
+        if args.model == "mask_rcnn":
+            train_maskrcnn(model, args.dataset, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
+        else:
+            train(model, dataloaders, loss, optimizer, logger, args.save_freq, args.save_path, args.epochs, has_mask)
 
 main()
 
